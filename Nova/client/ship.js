@@ -28,38 +28,45 @@ ship = class extends acceleratable(turnable(damageable(collidable(movable(spaceO
 
     }
 
-    build() {
-	return super.build.call(this)
+    async _build() {
+	await super._build();
 	//	.then(function() {console.log(this)}.bind(this))
-	    .then(_.bind(this.buildOutfits, this))
-	    .then(_.bind(this.buildTargetImage, this))
-	    .then(_.bind(function() {
-		// make sure ship properties are sane after loading outfits
-		if (this.properties.maxSpeed < 0) {
-		    this.properties.maxSpeed = 0
-		}
-		if (this.properties.turnRate < 0) {
-		    this.properties.turnRate = 0
-		}
-		
-		this.fuel = this.properties.maxFuel;
-		if (this.system) {
-		    this.system.built.ships.add(this);
-		}
-		
-	    }, this))
+	await this.buildOutfits();
+	await this.buildTargetImage();
+
+	// make sure ship properties are sane after loading outfits
+	if (this.properties.maxSpeed < 0) {
+	    this.properties.maxSpeed = 0;
+	}
+	if (this.properties.turnRate < 0) {
+	    this.properties.turnRate = 0;
+	}
 	
+	this.fuel = this.properties.maxFuel;
+	if (this.system) {
+	    this.system.built.ships.add(this);
+	}
     }
 
 
     buildTargetImage() {
 	this.targetImage = new targetImage(this.meta.targetImage);
-	return this.targetImage.build()
+	return this.targetImage.build();
     }
 
+    get UUIDS() {
+	var uuids = super.UUIDS;
+	this.weapons.all.forEach(function(weap) {
+	    uuids.push(weap.UUID);
+	});
+	return uuids;
+    }
+    
     buildOutfits() {
 	// builds outfits to this.outfits from this.outfitList
-	
+	this.outfits = [];
+	this.weapons.all = [];
+
 	_.each(this.outfitList, function(buildInfo) {
 	    
 	    var o = new outfit(buildInfo);
@@ -70,7 +77,7 @@ ship = class extends acceleratable(turnable(damageable(collidable(movable(spaceO
 	var outfitPromises = _.map(this.outfits, function(anOutfit) {
 	    //build unbuild outfits
 	    if (anOutfit.ready) {
-		return new Promise(function(fulfill, reject){fulfill()})
+		return new Promise(function(fulfill, reject){fulfill();});
 	    }
 	    else {
 		return anOutfit.build(this);
@@ -86,23 +93,23 @@ ship = class extends acceleratable(turnable(damageable(collidable(movable(spaceO
 
 	// adds sprites to the container in the correct order to have proper
 	// layering of engine, ship, lights etc.
-	var orderedSprites = [this.sprites.ship.sprite]
+	var orderedSprites = [this.sprites.ship.sprite];
 	if ("lights" in this.sprites) {
-	    orderedSprites.push(this.sprites.lights.sprite)
+	    orderedSprites.push(this.sprites.lights.sprite);
 	}
 	
 	if ("engine" in this.sprites) {
-	    orderedSprites.push(this.sprites.engine.sprite)
+	    orderedSprites.push(this.sprites.engine.sprite);
 	}
 	
 	
-	var spriteList = _.map(_.values(this.sprites), function(s) {return s.sprite;})
+	var spriteList = _.map(_.values(this.sprites), function(s) {return s.sprite;});
 	
 	//sprites that have no specified order
-	var without =  _.difference(spriteList, orderedSprites) 
+	var without =  _.difference(spriteList, orderedSprites);
 	//console.log(without)
-	_.each(without, function(x) {this.container.addChild(x)}, this);
-	_.each(orderedSprites, function(x) {this.container.addChild(x)}, this);
+	_.each(without, function(x) {this.container.addChild(x);}, this);
+	_.each(orderedSprites, function(x) {this.container.addChild(x);}, this);
 	this.system.container.addChild(this.container);
     }
 
@@ -121,7 +128,7 @@ ship = class extends acceleratable(turnable(damageable(collidable(movable(spaceO
 	}
     }
 
-    getStats(stats) {
+    getStats() {
 	var stats = super.getStats.call(this);
 	if (typeof this.target !== 'undefined') {
 	    stats.target = this.target.UUID;
@@ -169,15 +176,20 @@ ship = class extends acceleratable(turnable(damageable(collidable(movable(spaceO
 	
     }
 
+    manageEngine() {
+	if (this.accelerating == 1) {
+	    this.sprites.engine.sprite.alpha = 1;
+	}
+	else {
+	    this.sprites.engine.sprite.alpha = 0;
+	}
+    }
+    
     render() {
-
+	// maybe revise this to be a set of functions that are all called when rendering
+	// so you don't have to do 'if' every time you render
 	if ("engine" in this.sprites) {
-	    if (this.accelerating == 1) {
-		this.sprites.engine.sprite.alpha = 1;
-	    }
-	    else {
-		this.sprites.engine.sprite.alpha = 0;
-	    }
+	    this.manageEngine();
 	}
 	
 	if ("lights" in this.sprites) {
@@ -200,6 +212,21 @@ ship = class extends acceleratable(turnable(damageable(collidable(movable(spaceO
 	}
 	
 	super.render.call(this);
+	// super hacky bounding box
+	var bound = [5000,5000];
+	if (this.position[0] > bound[0]/2) {
+	    this.position[0] -= bound[0];
+	}
+	if (this.position[0] < -bound[0]/2) {
+	    this.position[0] += bound[0];
+	}
+	if (this.position[1] > bound[1]/2) {
+	    this.position[1] -= bound[1];
+	}
+	if (this.position[1] < -bound[1]/2) {
+	    this.position[1] += bound[1];
+	}
+
     }
     setTarget(newTarget) {
 	

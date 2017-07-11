@@ -17,19 +17,20 @@ class playerShip extends ship {
 	this.target = undefined;
 	this.planetTarget = undefined;
 	this.targetIndex = -1;
+	//this.sendTimeout;
 
     }
 
-    build() {
+    async _build() {
 
-	return super.build.call(this)
-	    .then(this.sortWeapons.bind(this))
-	    .then(this.makeStatusBar.bind(this))
-	    .then(function() {
-		// Is this terrible practice? I'm not sure, but it's definitely insane.	    
-		this.statechange = gameControls.onstatechange(this.statechange.bind(this));
-		this.assignControls(gameControls);
-	    }.bind(this));
+	await super._build();
+	this.sortWeapons();
+	await this.makeStatusBar();
+	// Is this terrible practice? I'm not sure, but it's definitely insane.	    
+	this.statechange = gameControls.onstatechange(this.statechange.bind(this));
+	this.assignControls(gameControls);
+	this.sendInterval = setInterval(this.sendStats.bind(this), 1000);
+
     }
 
 
@@ -52,27 +53,28 @@ class playerShip extends ship {
 
     receiveCollision(other) {
 	super.receiveCollision.call(this, other);
-	this.sendCollisionToServer();
+	this.sendCollision();
     }
 
 
     makeStatusBar() {
 	this.statusBar = new statusBar('civilian', this);
-	return this.statusBar.build()
+	return this.statusBar.build();
     }
 
     receiveCollision(other) {
 	ship.prototype.receiveCollision.call(this, other);
-	this.sendCollisionToServer();
+	this.sendCollision();
     }
 
 
     addSpritesToContainer() {
 	_.each(_.map(_.values(this.sprites), function(s) {return s.sprite;}),
 	       function(s) {this.container.addChild(s);}, this);
-	this.hide()
+	this.hide();
 
-	this.system.container.addChildAt(this.container, this.system.container.children.length) //playerShip is above all
+	this.system.container.addChildAt(this.container, this.system.container.children.length); //playerShip is above all
+	// replace this with pixi layering
     }
 
 
@@ -107,7 +109,7 @@ class playerShip extends ship {
 	this.cycleTarget = c.onstart("target", this.cycleTarget.bind(this));
 	this.resetNav = c.onstart("reset nav", this.resetNav.bind(this));
     }
-
+    
     statechange(state) {
 	//make this into a builder function and make it 
 	
@@ -165,12 +167,6 @@ class playerShip extends ship {
     
     updateStats(stats = {}) {
 	super.updateStats.call(this, stats);
-    }
-
-    sendStats() {
-	var newStats = {};
-	newStats[this.UUID] = this.getStats();
-	this.socket.emit('updateStats', newStats);
     }
 
     render() {
@@ -248,26 +244,24 @@ class playerShip extends ship {
 
     cycleTarget() {
 	// targetIndex goes from -1 (for no target) to ships.length - 1
-	var targets = Array.from(this.system.built.ships);
-	var incrementTargetIndex = function() {
-	    this.targetIndex = (this.targetIndex + 2) % (targets.length + 1) - 1;
-	    // super cheapo temporary way to not target the player ship (ship 0)
-	    if (this.targetIndex === 0) {
-		this.targetIndex = (this.targetIndex + 2) % (targets.length + 1) - 1;
-	    }
-	}.bind(this);
-	
-	incrementTargetIndex();
-	
-	// If targetIndex === -1, then target is undefined, which is intentional
+	var targets = Array.from(this.system.built.ships).filter(function(v) {
+	    return v !== this;
+	}.bind(this));
+
+
+	// loops from -1 to targets.length
+	this.targetIndex = (this.targetIndex + 2) % (targets.length + 1) - 1;
+	// If targetIndex === targets.length, then target is undefined, which is intentional
 	this.setTarget(targets[this.targetIndex]);
 	//    console.log(this.targetIndex)
     }
 
     onDeath() {
 	// temporary respawn
-	this.position[0] = 0;
-	this.position[1] = 0;
+	this.position[0] = Math.random() * 1000 - 500;
+	this.position[1] = Math.random() * 1000 - 500;
+	this.velocity[0] = 0;
+	this.velocity[1] = 0;
 	this.shield = this.properties.maxShields;
 	this.armor = this.properties.maxArmor;
 	var newStats = {};
@@ -275,7 +269,40 @@ class playerShip extends ship {
 	this.socket.emit('updateStats', newStats);
 	
     }
+    _addToSystem() {
+        if (this.built) {
+            this.system.built.ships.add(this);
+	    if (typeof(this.sendInterval) === 'undefined') {
+		this.sendInterval = setInterval(this.sendStats.bind(this), 1000);
+	    }
+	    // playerShip must be rendered before all others
+	    if (!this.system.built.render.has(this)) {
+		var built = [...this.system.built.render];
+		built.unshift(this);
+		this.system.built.render = new Set(built);
+	    }
 
+        }
+        this.system.ships.add(this);
+
+	
+        super._addToSystem.call(this);
+    }
+    _removeFromSystem() {
+	if (typeof this.sendInterval !== 'undefined') {
+	    clearInterval(this.sendTimeout);	    
+	}
+	super._removeFromSystem.call(this);
+    }
+    
+    addToSpaceObjects() {
+	var built = [...this.system.built.render];
+	built.unshift(this);
+	this.system.built.render = new Set(built);
+	super.addToSpaceObjects.call(this);
+    }
+
+    
     destroy() {
 	var controlFunctions = [this.firePrimary, this.stopPrimary,
 				this.fireSecondary, this.stopSecondary,
@@ -285,17 +312,18 @@ class playerShip extends ship {
 	controlFunctions.forEach(function(k) {
 	    gameControls.offall(k);
 	});
+	this.statusBar.destroy();
 	super.destroy.call(this);
     }
 }
 
 
 
-playerShip.prototype.sendCollisionToServer = _.throttle(function() {
+playerShip.prototype.sendCollision = _.throttle(function() {
     if (typeof this.UUID !== 'undefined') {
 	var stats = {};
 	stats[this.UUID] = this.getStats();
     }
     this.socket.emit('updateStats', stats);
     
-}, 1000);
+}, 100);

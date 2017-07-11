@@ -3,6 +3,7 @@ if (typeof(module) !== 'undefined') {
     //    var Promise = require("bluebird");
     var collidable = require("../server/collidableServer");
     var inSystem = require("./inSystem.js");
+    var PIXI = require("../server/pixistub.js");
 }
 
 beamWeapon = class extends collidable(inSystem){
@@ -16,6 +17,7 @@ beamWeapon = class extends collidable(inSystem){
 	this.ready = false;
 	this.source = source;
 	this.rendering = false;
+	this.built = false;
 	if (typeof source !== 'undefined') {
 	    this.position = source.position;
 	}
@@ -24,7 +26,7 @@ beamWeapon = class extends collidable(inSystem){
 	    this.name = buildInfo.name;
 	    this.meta = buildInfo.meta;
 	    
-	    this.count = buildInfo.count || 1
+	    this.count = buildInfo.count || 1;
 	    this.UUID = buildInfo.UUID;
 	}
     }
@@ -59,10 +61,19 @@ Else, return false
 	this.graphics = new PIXI.Graphics();
 
 	this.container.addChild(this.graphics);
-	this.source.system.built.render.add(this);
+
 	this.source.weapons.all.push(this);
+
 	this.ready = true;
-	
+	this.built = true;
+	if (typeof(this.system) !== 'undefined') {
+	    this._addToSystem();
+	}
+
+
+    };
+
+    buildConvexHulls() {
 	var length = this.meta.physics.length;
 	var halfWidth = this.meta.physics.width / 2;
 	var collisionPoints = [new this.crash.V(0, halfWidth),
@@ -71,7 +82,7 @@ Else, return false
 			       new this.crash.V(length, halfWidth)
 			      ];
 	this.collisionShape = new this.crash.Polygon(new this.crash.V, collisionPoints, false, this);
-    };
+    }
 
     set firing(val) {
 
@@ -96,7 +107,7 @@ Else, return false
 	    this.collisionShape.insert();
 	}
 	if ((typeof this.UUID !== 'undefined') && notify) {
-	    this.notifyServer();
+	    this.sendStats();
 	}
     }
 
@@ -106,12 +117,13 @@ Else, return false
 	this.rendering = false;
 	this.collisionShape.remove();
 	if ((typeof this.UUID !== 'undefined') && notify) {
-	    this.notifyServer();
+	    this.sendStats();
 	}
     }
 
     show() {
 	// necessary for inheritance
+	// wait. is it really necessary anymore?
     }
     
     getStats() {
@@ -134,17 +146,16 @@ Else, return false
     }
 
 
-    notifyServer() {
-	var stats = this.getStats();
-	var with_uuid = {};
-	with_uuid[this.UUID] = stats;
-	this.socket.emit('updateStats', with_uuid);
+    sendStats() {
+	var newStats = {};
+	newStats[this.UUID] = this.getStats();
+	this.socket.emit('updateStats', newStats);
     }
 
     
     
 
-    render(fireAngle) {
+    render(fireAngle = this.source.pointing) {
 	if (this.firing) {
 	    this.graphics.position.x =
 		(this.position[0] - stagePosition[0]) + (screenW-194)/2;
@@ -153,26 +164,29 @@ Else, return false
 	    this.graphics.clear();
 	    this.graphics.lineStyle(this.meta.physics.width, this.meta.physics.color);
 	    this.graphics.moveTo(0,0); // Position of the beam is handled by moving the PIXI graphics
-	    var fireAngle = fireAngle || this.source.pointing;
 	    var x = Math.cos(fireAngle) * this.meta.physics.length;
 	    var y = -Math.sin(fireAngle) * this.meta.physics.length;
 	    this.graphics.lineTo(x,y);
-	    
-	    this.collisionShape.moveTo(...this.position);
-	    this.collisionShape.setAngle(fireAngle);
+
+	    this.renderCollisionShape(fireAngle);
 	}
     }
 
-    
+
+    renderCollisionShape(fireAngle = this.source.pointing) {
+	this.collisionShape.moveTo(...this.position);
+	this.collisionShape.setAngle(fireAngle);
+    }
 
 
     collideWith(other, res) {
 	//console.log(res);
 	var delta = (other.delta) * 60 / 1000;
+
 	if (other.properties.vulnerableTo &&
 	    other.properties.vulnerableTo.includes("normal") &&
 	    other !== this.source) {
-	    
+
 	    var collision = {};
 	    collision.shieldDamage = this.meta.properties.shieldDamage * delta;
 	    collision.armorDamage = this.meta.properties.armorDamage * delta;
@@ -180,7 +194,7 @@ Else, return false
 	    collision.impact = this.meta.properties.impact * delta;
 	    collision.angle = this.pointing;
 	    
-	    //	console.log(collision);
+	    //console.log(collision);
 	    other.receiveCollision(collision);
 	}
     }
@@ -195,6 +209,8 @@ Else, return false
 	}
 
 	this.system.built.render.delete(this);
+	super._removeFromSystem.call(this);
+	
 	
     }
     _addToSystem() {
@@ -204,18 +220,18 @@ Else, return false
 	}
 
 	if (this.built) {
-	    if (this.rendering) {
-		this.system.built.render.add(this);
-	    }
+	    this.system.built.render.add(this);
 	}
 
 	this.system.spaceObjects.add(this);
+	super._addToSystem.call(this);
     }
     
     
     destroy() {
-	this.firing = false;
-	this.system.built.render.remove(this);
+	this._firing = false;
+	this.stopFiring(false);
+
     }
 
     setTarget(target) {

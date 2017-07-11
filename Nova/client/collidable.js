@@ -12,20 +12,10 @@ if (typeof(module) !== 'undefined') {
 
 
 var allConvexHulls = {};
-var crashInstance = new Crash({maxEntries:10});
-var crashListener = function(a, b, res, cancel) {
-    //console.log(a.data + " collided with " + b.data);
-    // the entire space object is stored in collider.data... is this bad?
-    // for garbage collection, yes...
-    
-    a.data.collideWith(b.data, res);
-    b.data.collideWith(a.data, res);
-}
 
 
 
 var collidable = function(superclass) {
-
 
     var collidableClass = class extends superclass {
 	constructor(buildInfo, system) {
@@ -33,78 +23,104 @@ var collidable = function(superclass) {
 	    if (typeof(this.buildInfo) !== 'undefined') {
 		this.buildInfo.type = "collidable";
 	    }
+	    this.convexHullData = undefined;
+	    //this.debug = true; // delete me
 	}
-
-	collideWith(other) {};
+	
+	collideWith(other) {}; 
 	receiveCollision(other) {};
-
 
 	show() {
 	    // Necessary in case show is called twice
-	    if (! (_.contains(this.crash.all(), this.collisionShape)) ) {
+	    if (super.show.call(this) && this.crash && ! (this.crash.all().includes(this.collisionShape)) ) {
 		this.collisionShape.insert();
 	    }
-	    super.show.call(this);
+
 	}
 
 	hide() {
 	    if (typeof(this.collisionShape) !== 'undefined') {
 		this.collisionShape.remove();
+		//this.debug = false;
 	    }
 	    super.hide.call(this);
 	}
 
+	_removeFromSystem() {
+	    if (typeof(this.collisionShape) !== 'undefined') {
+		this.collisionShape.remove();
+//		this.debug = false;
+	    }
+	    this.crash = undefined;
+	    super._removeFromSystem.call(this);
 
-
-	build() {
-	    return super.build.call(this)
-	    //	.then(function() {console.log(this.renderReady)}.bind(this))
-		.then(this.getCollisionSprite.bind(this))
-		.then(function() {
-		    var url = this.getCollisionSprite();
-		    return this.getConvexHulls(url);
-		}.bind(this))
-		.then(function(hulls) {
-		    this.collisionShapes = _.map(hulls, function(hullPoints) {
-			/*
-			// for testing
-			return new this.crash.Polygon(new this.crash.V,
-			[new this.crash.V(10,10),
-			new this.crash.V(-10,10),
-			new this.crash.V(-10,-10),
-			new this.crash.V(10, -10)],
-			false, this);
-			*/
-
-			return new this.crash.Polygon(new this.crash.Vector(0,0),
-						      _.map(hullPoints, function(point) {
-							  return new this.crash.Vector(point[0], point[1]);
-						      }.bind(this)), false, this);
-
-		    }.bind(this));
-		    this.collisionShape = this.collisionShapes[0] // Default
-
-		}.bind(this));
 	}
 
+	_addToSystem() {
+	    this.crash = this.system.crash;
+	    if (this.built) {
+		this.buildConvexHulls();
+		if (!(this.crash.all().includes(this.collisionShape)) ) {
+		    this.collisionShape.insert();
+		}
+	    }
+	    super._addToSystem.call(this);
+	}
+
+
+	async _build() {
+	    await super._build();
+	    var url = this.getCollisionSprite();
+	    this.convexHullData = await this.getConvexHulls(url);
+	    if (typeof(this.system) !== 'undefined') {
+		this.buildConvexHulls();
+	    }
+	}
+
+	buildConvexHulls() {
+	    
+	    this.collisionShapes = _.map(this.convexHullData, function(hullPoints) {
+		/*
+		// for testing
+		return new this.crash.Polygon(new this.crash.V,
+		[new this.crash.V(10,10),
+		new this.crash.V(-10,10),
+		new this.crash.V(-10,-10),
+		new this.crash.V(10, -10)],
+		false, this);
+		*/
+		
+		return new this.crash.Polygon(new this.crash.Vector(0,0),
+					      _.map(hullPoints, function(point) {
+						  return new this.crash.Vector(point[0], point[1]);
+					      }.bind(this)), false, this);
+		
+	    }.bind(this));
+	    this.collisionShape = this.collisionShapes[0]; // Default
+	}
+	
 	getConvexHulls(url) {
-	    url = url + '/convexHulls';
+	    url = url + '/convexHulls.json';
 	    if ( !(this.allConvexHulls.hasOwnProperty(url)) ) {
 		this.allConvexHulls[url] = new Promise(function(fulfill, reject) {
-		    $.getJSON(url, _.bind(function(data) {
-			if (data.hasOwnProperty('hulls')) {
 
-			    fulfill(data.hulls);
-			}
-			else {
-			    reject(new Error("data has no property hulls"))
-			}
-		    }, this));
+		    var loader = new PIXI.loaders.Loader();
+		    var hulls;
+		    loader
+			.add('hulls', url)
+			.load(function(loader, resource) {
+			    hulls = resource.hulls.data.hulls;
+
+			});
+		    loader.onComplete.add(function() {
+			fulfill(hulls);
+		    });
+		    loader.onError.add(reject.bind(this, "Could not get url " + url));
 
 		}.bind(this));
 	    }
 
-	    return this.allConvexHulls[url]
+	    return this.allConvexHulls[url];
 
 	}
 
@@ -112,7 +128,7 @@ var collidable = function(superclass) {
 	    super.setProperties.call(this);
 
 	    if (typeof(this.properties.vulnerableTo) === 'undefined') {
-		this.properties.vulnerableTo = ["normal"] // normal and/or pd
+		this.properties.vulnerableTo = ["normal"]; // normal and/or pd
 	    }
 	}
 
@@ -131,8 +147,7 @@ var collidable = function(superclass) {
 		collisionSpriteName = 'ship';
 	    }
 	    else {
-		reject("no collision image");
-		return;
+		return false;
 	    }
 	    this.collisionSpriteName = collisionSpriteName;
 	    var url = collisionSprite.url;
@@ -150,11 +165,7 @@ var collidable = function(superclass) {
     }
 
 
-    collidableClass.prototype.crash = crashInstance;
-    collidableClass.prototype.crashListener = crashListener;
     
-    collidableClass.prototype.crash.onCollision(collidableClass.prototype.crashListener);
-
     collidableClass.prototype.allConvexHulls = allConvexHulls; 
 
 
@@ -162,7 +173,6 @@ var collidable = function(superclass) {
     return collidableClass;
 }
 
-collidable.prototype.crash = crashInstance;
 
 if (typeof(module) !== 'undefined') {
     module.exports = collidable;

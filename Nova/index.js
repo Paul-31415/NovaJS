@@ -11,43 +11,50 @@ var fs = require('fs'),
 
 var repl = require("repl");
 
-var test = function() {
-    return "did a test"
-}
-
 var local = repl.start();
 
 local.context.io = io;
 
-local.context.help = function() {
+var help = function() {
     console.log("Available commands:\n" +
-	    "help()\tprints this help\n" + 
-	    "list()\tlists players\n" +
-	    "kick(uuid)\tkicks a player by uuid"
+		"help\tprints this help\n" + 
+		"list\tlists players\n" +
+		"kick(uuid)\tkicks a player by uuid"
 	       );
-
 }
+Object.defineProperty(local.context, 'help', {set: function(x) {}, get: help});
 
 // lists players
-local.context.list = function() {
-    var formatted = {}
+
+
+var listPlayers = function() {
+    var formatted = {};
     _.each(players, function(p, key) {
 	formatted[key] = {"ship":p.ship.name};
     });
     return formatted;
 }
 
+Object.defineProperty(local.context, 'list', {set: function(x) {}, get: listPlayers});
+
+
 // kicks a player
 var kick = function(UUID) {
     if (_.includes(Object.keys(players), UUID)) {
 	players[UUID].io.disconnect();
     }
-
 }
 
 local.context.kick = kick;
-local.context.test = test;
 
+var npc = require("./server/npcServer.js");
+//npc.prototype.io = io;
+var spaceObject = require("./server/spaceObjectServer");
+spaceObject.prototype.socket = io;
+var beamWeapon = require("./server/beamWeaponServer");
+beamWeapon.prototype.socket = io;
+var basicWeapon = require("./server/basicWeaponServer");
+basicWeapon.prototype.socket = io;
 var ship = require("./server/shipServer");
 var outfit = require("./server/outfitServer");
 var planet = require("./server/planetServer");
@@ -56,13 +63,27 @@ var collidable = require("./server/collidableServer.js");
 var medium_blaster = new outfit("Medium Blaster", 1);
 var sol = new system();
 local.context.sol = sol;
+Object.defineProperty(local.context, 'ships', {set: function() {}, get: function() {
+    return Array.from(sol.ships);
+}});
+
 var convexHullBuilder = require("./server/convexHullBuilder.js");
 var path = require('path');
 
+var AI = require("./server/AI.js");
+npcMaker= new AI(sol);
 
-//var starbridge = new ship("Starbridge A", [medium_blaster], sol);
+local.context.npcMaker = npcMaker;
+npcMaker.makeShip(npcMaker.followAndShoot);
 
-var players = {};
+var players = {}; // for repl
+
+var startGame = function() {
+    spaceObject.prototype.lastTime = new Date().getTime();
+    gameloop(sol);
+
+}
+local.context.startGame = startGame;
 var gameTimeout;
 var gameloop = function(system) {
     
@@ -70,10 +91,13 @@ var gameloop = function(system) {
     // 	player.time = new Date().getTime();
     // 	player.render()
     // });
+    spaceObject.prototype.time = new Date().getTime();
     system.render();
-
+    
+    
     gameTimeout = setTimeout(function() {gameloop(system)}, 0);
-}
+};
+
 
 //notify clients of
 /*
@@ -91,20 +115,22 @@ setInterval(function() {
 //app.get('/', 
 
 global.convexHulls = {};
-
+local.context.convexHulls = global.convexHulls;
 var getConvexHulls = function(url) {
+    //console.log(url);
     if ( !(global.convexHulls.hasOwnProperty(url)) ) {
 	global.convexHulls[url] = new convexHullBuilder(url).build();
 	//console.log(global.convexHulls)
     }
     return global.convexHulls[url];
-}
+};
 
 
-app.get('/objects/:objectType/:jsonUrl/convexHulls', function(req, res) {
+app.get('/objects/:objectType/:jsonUrl/convexHulls.json', function(req, res) {
 
     var decoded = decodeURI(req.path);
-    var objPath = path.normalize(path.join(decoded, '../').slice(0,-1));
+    var objPath = path.normalize(path.join(decoded, '../').slice(0,-1)).slice(1);
+//    console.log(objPath);
     getConvexHulls(objPath).then(function(hulls) {
 	res.json({"hulls":hulls});
     });
@@ -126,14 +152,15 @@ app.get('/', function(req, res){
 
 
 
-app.use(express.static(__dirname))
+app.use(express.static(__dirname));
 
 
 sol.buildObject({'name':'Earth', 'UUID':UUID(), 'type':'planet'});
-sol.build();
+sol.build()
+    .then(startGame);
 
 var receives = 0;
-var transmits = 0;
+transmits = 0;
 local.context.transmits = transmits;
 // debugging socket.io io
 /*
@@ -209,6 +236,7 @@ io.on('connection', function(client){
 	"outfits":[heavy_blaster_turret, railgun_200mm, ir_missile]
 
     }
+
     var Firebird = {
 	"name":"Firebird_Thamgiir",
 	"outfits": [hailChaingun]
@@ -248,6 +276,10 @@ io.on('connection', function(client){
 			owned_uuids.push(uuid);
 		    });
 		});
+		myShip.show();
+		var filtered_stats = {};
+		filtered_stats[userid] = myShip.getStats();
+		client.broadcast.emit('updateStats', filtered_stats);
 	    });
     //	.then(function() {console.log(myShip.weapons.all[0].UUID)})
     }
@@ -295,9 +327,9 @@ io.on('connection', function(client){
 		filtered_stats[uuid] = newStats;
 	    }
 	    else {
-		console.log("client tried to change something it didn't own");
-		console.log("Owned uuids: " + owned_uuids);
-		console.log("Tried to change: " + uuid);
+		//console.log("client tried to change something it didn't own");
+		//console.log("Owned uuids: " + owned_uuids);
+		//console.log("Tried to change: " + uuid);
 	    }
 
 	});
@@ -321,6 +353,7 @@ io.on('connection', function(client){
 
     //    console.log(client);
 //    console.log(userid);
+
 
     
     client.on('pingTime', function(msg) {
@@ -356,6 +389,7 @@ io.on('connection', function(client){
 	client.broadcast.emit('removeObjects', owned_uuids);
 	transmits += playercount - 1;
 	currentSystem.removeObjects(owned_uuids);
+	// make sure this destroys them (it doesn't right now)
 	owned_uuids = [userid];
     });
     client.on('depart', function() {
@@ -377,7 +411,7 @@ io.on('connection', function(client){
 	client.broadcast.emit('removeObjects', owned_uuids);
 	transmits += playercount - 1;
 
-	currentSystem.removeObject(userid);
+	currentSystem.destroyObjects(owned_uuids);
 	console.log("disconnected");
 
 	delete players[userid];

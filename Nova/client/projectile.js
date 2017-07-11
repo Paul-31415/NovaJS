@@ -26,18 +26,22 @@ projectile = class extends acceleratable(turnable(damageable(collidable(movable(
 	this.target;
     }
 
-    build() {
+    async build() {
+	await super.build();
+	this.available = true;
+    }
+    
 
+    _addToSystem() {
 	this.targets = this.system.ships; // Temporary (PD weapons can hit missiles)
-	var setAvailable = function() {
-	    this.available = true
-	}
-	
-	return super.build.call(this)
-	    .then(_.bind(setAvailable, this));
+        super._addToSystem.call(this);
     }
 
-
+    _removeFromSystem() {
+	this.targets = new Set();
+        super._removeFromSystem.call(this);
+    }
+    
     loadResources() {
 	// would set this.meta.physics, but
 	// this.meta.physics is given by weapon on construction.
@@ -105,6 +109,7 @@ projectile = class extends acceleratable(turnable(damageable(collidable(movable(
 	    collision.armorDamage = this.meta.properties.armorDamage;
 	    collision.impact = this.meta.properties.impact;
 	    collision.angle = this.pointing;
+	    //console.log("Projectile hit something");
 	    other.receiveCollision(collision);
 	    this.end();
 	    clearTimeout(this.endTimeout);

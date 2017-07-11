@@ -5,6 +5,7 @@ if (typeof(module) !== 'undefined') {
     var spaceObject = require("../server/spaceObjectServer.js");
     var planet = require("../server/planetServer.js");
     var ship = require("../server/shipServer.js");
+    var Crash = require("crash-colliders");
 }
 
 
@@ -13,6 +14,15 @@ function system() {
     this.spaceObjects = new Set();
     this.ships = new Set();
     this.planets = new Set();
+    this.npcs = new Set();
+    this.crash = new Crash({maxEntries:10});
+    this.crash.onCollision(function(a, b, res, cancel) {
+	//console.log(a.data + " collided with " + b.data);
+	// the entire space object is stored in collider.data... is this bad?
+	// for garbage collection, yes...?
+	a.data.collideWith(b.data, res);
+	b.data.collideWith(a.data, res);
+    });
 
     // this.ships.add = function(t) {
     // 	console.log("added");
@@ -46,9 +56,10 @@ system.prototype.render = function() {
     });
     this.built.render.forEach(function(thing) {
 	if ( (!thing.rendered) && (thing.rendering) ) {
-	    thing.render();	    
+	    thing.render();
 	}
     });
+    this.crash.check();
 }
 
 
@@ -113,6 +124,8 @@ system.prototype.buildObject = function(buildInfo) {
 	case "ship":
 	    newObj = new ship(buildInfo, this);
 	    break;
+	case "npc":
+	    newObj = new npc(buildInfo, this);
 	}
     }
     
@@ -124,6 +137,19 @@ system.prototype.buildObject = function(buildInfo) {
 }
 
 
+system.prototype.destroyObjects = function(uuids) {
+    uuids.forEach(function(uuid) {
+	this.destroyObject(uuid);
+    }.bind(this));
+
+}
+
+system.prototype.destroyObject = function(uuid) {
+    if (uuid in this.multiplayer) {
+	this.multiplayer[uuid].destroy();
+    }
+
+}
 
 system.prototype.removeObjects = function(uuids) {
     _.each(uuids, function(uuid) {
@@ -144,8 +170,12 @@ system.prototype.setObjects = function(buildInfo) {
 	if ( (typeof buildInfo !== 'undefined') && (! (uuid in buildInfo))) {
             if (obj == myShip) {
                 console.log("Server claims player's ship does not exist");
+		this.removeObject(uuid);
+		obj.destroy();
             }
-	    this.removeObject(uuid);
+	    else {
+		this.removeObject(uuid);
+	    }
 	}
 
     }.bind(this));
@@ -167,8 +197,12 @@ system.prototype.setObjects = function(buildInfo) {
 system.prototype.getObjects = function() {
     var buildInfo = {};
     _.each(this.multiplayer, function(obj, uuid) {
-	// protect objects from having their buildinfo changed
-	buildInfo[uuid] = Object.assign({}, obj.buildInfo);
+	// only send specific object types
+	if (['ship','playership','planet', 'npc'].includes(obj.buildInfo.type)) {
+	    // protect objects from having their buildinfo changed
+	    buildInfo[uuid] = Object.assign({}, obj.buildInfo);
+	}
+	
     });
     return buildInfo;
 }

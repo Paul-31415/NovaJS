@@ -21,35 +21,33 @@ outfit = class extends inSystem {
     }
     
 
-    build(source) {
-	this.source = source
-	return this.loadResources()
-	    .then(_.bind(this.buildWeapons, this))
-	    .then(_.bind(this.applyEffects, this))
-	    .then(_.bind(function() {
-		this.ready = true;
-		
-	    }, this));
-	
+    async build(source) {
+	this.source = source;
+	await this.loadResources();
+	if (this.meta.functions.weapon) {
+	    await this.buildWeapons();
+	}
+	this.applyEffects();
+	this.ready = true;
     }
 
     loadResources() {
 
 	return new Promise( function(fulfill, reject) {
 	    // fix me to not use jquery
-	    $.getJSON(this.url + this.name + ".json", _.bind(function(data) {
-		this.meta = data;
-		
-		if ((typeof(this.meta) !== 'undefined') && (this.meta !== null)) {
-		    fulfill();
-		}
-		else {
-		    reject();
-		}
-		
-		
-	    }, this));
-	    
+	    var loader = new PIXI.loaders.Loader();
+	    var meta;
+	    var url = this.url + this.name + ".json";
+	    loader
+		.add('meta', url)
+		.load(function(loader, resource) {
+		    this.meta = resource.meta.data;
+		}.bind(this));
+	    loader.onComplete.add(function() {
+		fulfill();
+	    });
+	    loader.onError.add(reject.bind(this, "Could not get url " + url));
+
 	}.bind(this));
 	
 	
@@ -61,7 +59,7 @@ outfit = class extends inSystem {
 	    var buildInfo = {
 		"name": weaponName,
 		"source": this.source.UUID,
-		"count": this.count,
+		"count": this.count
 	    };
 	    if (typeof this.buildInfo.UUIDS !== 'undefined') {
 		buildInfo.UUID = this.buildInfo.UUIDS[buildInfo.name];
@@ -73,15 +71,8 @@ outfit = class extends inSystem {
 	    this.addChild(w);
 	    return w;
 	}.bind(this));
-	
-	
-	if (this.meta.functions.weapon) {
-	    return Promise.all(_.map( this.weapons, function(weapon) {return weapon.build()}));
-	}
-	else {
-	    return
-	}
-	
+
+	return Promise.all(_.map( this.weapons, function(weapon) {return weapon.build();}));
 	
     }
 
@@ -89,13 +80,13 @@ outfit = class extends inSystem {
 	
 	
 	if (this.meta.functions["speed increase"]) {
-	    this.source.properties.maxSpeed += this.meta.functions["speed increase"] * this.count
+	    this.source.properties.maxSpeed += this.meta.functions["speed increase"] * this.count;
 	}
 	
     }
 
     destroy() {
-	_.each(this.weapons, function(w) {w.destroy()});
+	_.each(this.weapons, function(w) {w.destroy();});
 	
     }
 }

@@ -8,12 +8,18 @@ class beamWeaponServer extends beamWeapon {
 	super(...arguments);
     }
 
-    build() {};
+//    build() {};
 
-    startFiring() {};
-    stopFiring() {};
-    render() {};
+    render(fireAngle = this.source.pointing) {
+	this.renderCollisionShape(fireAngle);
+    }
 
+    /*
+    notifyServer() {
+//	var stats = this.getStats();
+    }
+    */
+    /*
     updateStats(stats) {
 	if (stats.firing) {
 	    this.firing = true;
@@ -23,5 +29,6 @@ class beamWeaponServer extends beamWeapon {
 	}
 	
     };
+*/
 }
 module.exports = beamWeaponServer;

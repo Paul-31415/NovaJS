@@ -32,6 +32,7 @@ spaceObject = class extends inSystem {
 
 	this.size = [];
 	this.built = false;
+	this.building = false;
 
 	this.container = new PIXI.Container(); // Must be before call to set system
 	this.container.visible = false;
@@ -59,16 +60,39 @@ spaceObject = class extends inSystem {
 	this.system = system; // a function call (see inSystem.js)
     }
 
-    build() {
-	return this.loadResources()
-    	    .then(_.bind(this.setProperties, this))
-	    .then(_.bind(this.makeSprites, this))
-	    .then(_.bind(this.makeSize, this))
-	    .then(_.bind(this.addSpritesToContainer, this))
-	    .then(_.bind(this.addToSpaceObjects, this))
-	    .then(function() {this.built = true;}.bind(this));
-    };
+    get UUIDS() {
+	var uuids = [];
+	if (this.UUID) {
+	    uuids.push(this.UUID);
+	}
+	return uuids;
+    }
+    
+    async _build() {
+	await this.loadResources();
+    	await this.setProperties();
+	await this.makeSprites();
+	this.makeSize();
+	this.addSpritesToContainer();
+	this.addToSpaceObjects();
+    }
 
+    
+    async build() {
+	if (!this.building && !this.built) {
+	    this.building = true;
+	    await this._build();
+	    this.building = false;
+	    this.built = true;
+	}	
+    }
+
+    sendStats() {
+	var newStats = {};
+	newStats[this.UUID] = this.getStats();
+	this.socket.emit('updateStats', newStats);
+    }
+    
     addToSpaceObjects() {
 	this.system.built.spaceObjects.add(this);
 	this.system.built.render.add(this);
@@ -253,9 +277,10 @@ spaceObject = class extends inSystem {
 
         if (this.built) {
             this.system.built.spaceObjects.add(this);
-            if (this.rendering) {
-                this.system.built.render.add(this);
-            }
+//            if (this.rendering) {
+            this.system.built.render.add(this);
+
+//            }
         }
 
         this.system.spaceObjects.add(this);

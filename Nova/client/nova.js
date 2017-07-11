@@ -66,6 +66,7 @@ var currentSystem = new system();
 
 var textures = {}; // global texture object that sprites save and load textures from
 var gameControls = new controls(); // global controls
+gameControls.onstart("fullscreen", fullscreen);
 var players = {};
 var myShip;
 var stars;
@@ -77,7 +78,9 @@ socket.on('onconnected', function(data) {
     console.log("Connected to server. UUID: "+UUID);
 //    myShip = new playerShip(data.playerShip);
 
-    stars = new starfield(myShip, 40);
+    if (typeof stars === 'undefined') {
+	stars = new starfield(myShip, 40);
+    }
 
 
     if (data.paused) {
@@ -131,7 +134,7 @@ socket.on('buildObjects', function(buildInfoList) {
 });
 
 socket.on('removeObjects', function(uuids) {
-    currentSystem.removeObjects(uuids);
+    currentSystem.destroyObjects(uuids);
 });
 
 
@@ -228,16 +231,17 @@ function animateSpace() {
     spaceObject.prototype.time = new Date().getTime() + timeDifference;
 
     // in case the server restarted...
-    
+    /*
     if (myShip.rendering) {
 	myShip.render();
     }
+    */
     stars.render();
     currentSystem.render();
 
     
     
-    collidable.prototype.crash.check();
+    //currentSystem.crash.check();
     
     renderer.render(space);
     if (!paused) {

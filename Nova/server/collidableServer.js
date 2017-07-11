@@ -16,11 +16,11 @@ let collidableServer = (superclass) => class extends collidable(superclass) {
     }
     // stops the server from sending bogus updateStats events
     receiveCollision(other) {};
-
-    build() {
+    /*
+    _build() {
 
 	//    console.log(this.url + this.name + ".json");
-	return super.build.call(this)
+	return super._build.call(this)
 	    .then(function() {
 		//	    var url = this.getCollisionSprite();
 		//	    return this.getConvexHulls(url);
@@ -30,9 +30,10 @@ let collidableServer = (superclass) => class extends collidable(superclass) {
 		this.convexHulls = hulls;
 	    }.bind(this));
     }
-
+*/
     
     getConvexHulls(url) {
+	var url = path.normalize(url);
 	if ( !(global.convexHulls.hasOwnProperty(url)) ) {
 	    global.convexHulls[url] = new convexHullBuilder(url).build();
 	    //console.log(global.convexHulls)
